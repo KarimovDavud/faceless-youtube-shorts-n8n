@@ -1,0 +1,41 @@
+services:
+  n8n:
+    build: .
+    container_name: n8n-shorts
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    env_file:
+      - .env
+    environment:
+      # --- core n8n ---
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Baku}
+      - TZ=${TIMEZONE:-Asia/Baku}
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_RUNNERS_ENABLED=true
+      # Allow expressions to read process env (so $env.GROQ_API_KEY works in nodes).
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # Let the Code node use built-in Node modules if you extend it.
+      - NODE_FUNCTION_ALLOW_BUILTIN=*
+      # n8n blocks the Execute Command node by DEFAULT (its default NODES_EXCLUDE is
+      # ["n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger"]).
+      # Our pipeline needs executeCommand, so re-allow it (keep localFileTrigger blocked).
+      - 'NODES_EXCLUDE=["n8n-nodes-base.localFileTrigger"]'
+      # The Read/Write File node is restricted to ~/.n8n-files by default. Our renders
+      # live in /data, so allow that tree too (semicolon-separated).
+      - 'N8N_RESTRICT_FILE_ACCESS_TO=/data;/home/node/.n8n-files'
+      # NOTE: GROQ_API_KEY and PEXELS_API_KEY come straight from env_file (.env).
+      # Do NOT redeclare them here with ${...} — interpolation can resolve to empty
+      # and override the env_file value.
+    volumes:
+      - n8n_data:/home/node/.n8n   # n8n's own DB, credentials, workflows
+      - ./data:/data               # per-run scratch space (audio, bg, output mp4)
+      - ./assets:/assets           # fonts / optional music
+      - ./scripts:/scripts         # media engine (also baked into the image)
+
+volumes:
+  n8n_data:

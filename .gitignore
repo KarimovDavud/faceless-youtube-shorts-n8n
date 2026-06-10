@@ -1,0 +1,15 @@
+# secrets
+.env
+
+# per-run scratch (rendered audio/video/backgrounds)
+data/*
+!data/.gitkeep
+
+# internal dev / one-off artifacts (not part of the published project)
+workflows/_*.json
+build_test_workflow.js
+build_public_variants.js
+
+# os
+.DS_Store
+Thumbs.db

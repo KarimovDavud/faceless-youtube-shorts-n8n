@@ -1,0 +1,239 @@
+{
+  "id": "cleaningautopost",
+  "name": "YouTube Shorts — Cleaning (Automated)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtHour": 14
+            }
+          ]
+        }
+      },
+      "id": "c-schedule",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -80,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const system = \"You produce 'oddly satisfying' CLEANING transformation Shorts. No narration, no voiceover.\\nEach video is EITHER a CAR cleaning/detailing transformation OR a HOUSE/room deep-clean\\ntransformation, shown from dirty/messy to spotless. Return ONLY a JSON object with keys:\\n\\n  theme       - 'car' or 'house'.\\n  title       - <= 90 chars, satisfying & curiosity-driven, may use 1-2 emojis,\\n                MUST end with ' #Shorts'. e.g. 'Deep Cleaning the DIRTIEST Car Ever 🚗 #Shorts'.\\n  description - 2 short sentences, then a new line with 5 hashtags\\n                (always include #satisfying #cleaning #asmr).\\n  tags        - array of 8-12 lowercase keyword strings.\\n  hook        - <= 28 chars ON-SCREEN caption, PLAIN ASCII text, NO emojis, NO punctuation\\n                that needs escaping. e.g. 'Deep Clean Transformation' or 'Filthy Car Reborn'.\\n  queries     - array of EXACTLY 5 short stock-video search phrases that tell the cleaning\\n                progression from dirty to clean. They must be concrete things stock sites have.\\n                CAR example: ['dirty car interior','car vacuum cleaning','car wash foam',\\n                'car detailing polish','clean shiny car'].\\n                HOUSE example: ['messy room','vacuuming carpet','mopping floor',\\n                'wiping kitchen counter','clean tidy living room'].\\n\\nAlternate between car and house across videos. Keep queries simple and literal.\";\nconst body = {\n  model: 'llama-3.3-70b-versatile',\n  temperature: 1.0,\n  response_format: { type: 'json_object' },\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: 'Generate ONE fresh cleaning Short now. Respond with the JSON object only.' }\n  ]\n};\nreturn [{ json: { body } }];"
+      },
+      "id": "c-buildprompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GROQ_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "c-groq",
+      "name": "Generate Script (Groq)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst content = res.choices && res.choices[0] && res.choices[0].message.content;\nif (!content) throw new Error('No content from LLM: ' + JSON.stringify(res).slice(0,400));\nlet d; try { d = JSON.parse(content); } catch(e){ throw new Error('Bad LLM JSON: ' + content.slice(0,400)); }\nif (!d.title) throw new Error('missing title');\nd.queries = Array.isArray(d.queries) ? d.queries.filter(Boolean) : [];\nif (d.queries.length < 3) throw new Error('need >=3 queries, got ' + d.queries.length);\nd.hook = (d.hook || '').replace(/[^\\x20-\\x7E]/g, '').slice(0, 28);\nd.tags = Array.isArray(d.tags) ? d.tags : [];\nreturn [{ json: d }];"
+      },
+      "id": "c-parse",
+      "name": "Parse Script",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst runId = String($execution.id || Date.now());\nconst runDir = `/data/${runId}`;\nconst job = { hook: item.hook || '', per: 6, queries: item.queries };\nconst jobB64 = Buffer.from(JSON.stringify(job), 'utf8').toString('base64');\nreturn [{ json: { runId, runDir, jobB64, title: item.title, description: item.description, tags: item.tags } }];"
+      },
+      "id": "c-buildjob",
+      "name": "Build Job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p {{ $json.runDir }} && echo '{{ $json.jobB64 }}' | base64 -d > {{ $json.runDir }}/job.json && bash /scripts/produce_satisfying.sh {{ $json.runDir }}"
+      },
+      "id": "c-produce",
+      "name": "Produce Video",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "={{ $('Build Job').item.json.runDir }}/video.mp4",
+        "options": {}
+      },
+      "id": "c-read",
+      "name": "Read Video File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Parse Script').item.json.title }}",
+        "regionCode": "AZ",
+        "categoryId": "26",
+        "binaryProperty": "data",
+        "options": {
+          "description": "={{ $('Parse Script').item.json.description }}",
+          "privacyStatus": "public",
+          "tags": "={{ ($('Parse Script').item.json.tags || []).join(',') }}"
+        }
+      },
+      "id": "c-youtube",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        300
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "wnouvKf8iUYC3etp",
+          "name": "YouTube account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Script (Groq)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Script (Groq)": {
+      "main": [
+        [
+          {
+            "node": "Parse Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Script": {
+      "main": [
+        [
+          {
+            "node": "Build Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Job": {
+      "main": [
+        [
+          {
+            "node": "Produce Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Produce Video": {
+      "main": [
+        [
+          {
+            "node": "Read Video File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Video File": {
+      "main": [
+        [
+          {
+            "node": "Upload to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}
